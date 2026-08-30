@@ -4,6 +4,8 @@ A self-hosted WhatsApp gateway built with [Next.js](https://nextjs.org) and [Bai
 
 **Live deployment (this repo):** https://whatsapp-gateway.sa-apps.com — deployed on [Coolify](https://coolify.io) at server `135.181.243.9`.
 
+➡️ **Using the deployed version?** Jump to [Deployed production instance](#deployed-production-instance).
+
 ---
 
 ## Table of contents
@@ -237,6 +239,77 @@ Incoming text messages (including image/video/document **captions**) are capture
 Properties per message: `id`, `chat` (JID to reply to), `sender`, `pushName` (profile name), `text`, `timestamp` (ms), `isGroup`, `fromMe`.
 
 Current limitations: **in-memory only** (resets on restart), **poll-based** (no push/webhook yet), **text-only** (binary media isn't downloaded — captions are). A webhook + database persistence is the natural next step.
+
+## Deployed production instance
+
+A live instance of this gateway runs on Coolify. All details below.
+
+| Setting            | Value                                                        |
+| ------------------ | ------------------------------------------------------------ |
+| **Base URL**       | `https://whatsapp-gateway.sa-apps.com`                       |
+| **Server**         | `135.181.243.9` (Hetzner, Coolify name `metal-135.181.243.9`) |
+| **Coolify project**| `whatsapp-gateway` (UUID `dfpyrnrk6nc9q0roxerwquyb`)          |
+| **Coolify app**    | UUID `sq2fa3m1w3ynyaszvb5gikxp`, environment `production`     |
+| **Source**         | this GitHub repo, `main` branch, Dockerfile build pack        |
+| **API key**        | `GATEWAY_API_KEY` env var — set in Coolify (⚠️ never commit it; the repo is public) |
+
+### Using it
+
+1. Open https://whatsapp-gateway.sa-apps.com and enter the API key (find it in Coolify → project `whatsapp-gateway` → app → **Environment**) in the 🔒 unlock card. It's stored in your browser afterwards.
+2. Scan the QR with your phone to link the session. The instance keeps its own session — it is **not** shared with any local dev instance.
+3. Call the API:
+
+```bash
+BASE=https://whatsapp-gateway.sa-apps.com
+KEY=<your GATEWAY_API_KEY from Coolify>
+
+# status + received messages
+curl -H "x-api-key: $KEY" $BASE/api/state
+
+# text
+curl -X POST $BASE/api/send -H "x-api-key: $KEY" -H "Content-Type: application/json" \
+  -d '{"to":"254712345678","message":"*Hello* from production"}'
+
+# photo by URL
+curl -X POST $BASE/api/send -H "x-api-key: $KEY" -H "Content-Type: application/json" \
+  -d '{"to":"254712345678","type":"image","url":"https://example.com/photo.jpg","caption":"Hi"}'
+
+# file upload
+curl -X POST $BASE/api/send -H "x-api-key: $KEY" \
+  -F to=254712345678 -F file=@report.pdf
+```
+
+The domain works because `*.sa-apps.com` wildcard DNS points at `135.181.243.9`, where Coolify's proxy (Traefik/Caddy) terminates TLS with an auto-issued certificate and routes to the container.
+
+### Managing it
+
+All management happens in the Coolify dashboard (or via the Coolify API at `https://app.coolify.io/api/v1`):
+
+| Task | How |
+| --- | --- |
+| **Update to latest code** | Push to `main`, then Coolify → app → **Redeploy** (or `POST /api/v1/applications/sq2fa3m1w3ynyaszvb5gikxp/start`) |
+| **Restart** | App → **Restart** (keeps the session) |
+| **Change the API key** | App → **Environment** → edit `GATEWAY_API_KEY` → **Restart** |
+| **Unlink the session** | `POST /api/logout` on the gateway, or delete `WhatsApp Web` under WhatsApp → Linked devices on the phone |
+| **View logs** | App → **Logs** (connection errors show here; the app itself logs quietly) |
+| **Rotate/re-issue the TLS cert** | Automatic via the proxy |
+
+### Recommended: persistent session volume
+
+The session currently lives inside the container filesystem. **A redeploy/rebuild wipes it**, and you'd have to scan the QR again. Fix once in Coolify:
+
+> App → **Storage** → **Add volume**: mount path `/app/.wa-session` → Save → Redeploy → re-scan the QR one last time.
+
+After that, the linked session survives every restart and redeploy.
+
+### Status checklist
+
+- ✅ HTTPS via auto-issued certificate
+- ✅ API-key protection on all routes (`401` without the key)
+- ✅ Auto-restart (container `restart` policy + in-app reconnect loop)
+- ✅ Deployed automatically from `main` via Dockerfile
+- ⚠️ Session volume — add it (see above) so redeploys keep the WhatsApp session
+- ⚠️ Inbox is in-memory — messages received before a restart are not preserved
 
 ## Deployment
 
