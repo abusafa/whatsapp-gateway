@@ -37,12 +37,52 @@ curl http://localhost:3000/api/state
 
 ## HTTP API
 
+All routes require the `GATEWAY_API_KEY` secret (if set) via the `x-api-key` header, an `Authorization: Bearer <key>` header, or an `api_key` query parameter.
+
 | Method | Route          | Body                        | Returns                                              |
 | ------ | -------------- | --------------------------- | ---------------------------------------------------- |
 | GET    | `/api/state`   | —                           | Connection status, QR, pairing code, user, inbox     |
-| POST   | `/api/send`    | `{ to, message }`           | `{ ok, to, id }`                                     |
+| POST   | `/api/send`    | see below                   | `{ ok, to, id }`                                     |
 | POST   | `/api/pair`    | `{ phone }` (country code)  | `{ ok, code }` — enter the code in WhatsApp          |
 | POST   | `/api/logout`  | —                           | Unlinks the session and clears stored credentials    |
+
+### Sending
+
+**Text** (WhatsApp formatting works: `*bold*`, `_italic_`, `~strike~`, triple-backtick monospace):
+
+```bash
+curl -X POST http://localhost:3000/api/send \
+  -H "x-api-key: $KEY" -H "Content-Type: application/json" \
+  -d '{"to": "254712345678", "message": "*Hello* from the gateway!"}'
+```
+
+**Media via URL** — `type` is `image` (default), `video`, `audio`, `document`, or `sticker`:
+
+```bash
+curl -X POST http://localhost:3000/api/send \
+  -H "x-api-key: $KEY" -H "Content-Type: application/json" \
+  -d '{"to": "254712345678", "type": "image", "url": "https://example.com/photo.jpg", "caption": "Hello"}'
+
+curl -X POST http://localhost:3000/api/send \
+  -H "x-api-key: $KEY" -H "Content-Type: application/json" \
+  -d '{"to": "254712345678", "type": "document", "url": "https://example.com/report.pdf", "fileName": "Report.pdf"}'
+```
+
+**Media via base64:**
+
+```bash
+-d '{"to": "254712345678", "type": "audio", "base64": "<...>", "mimetype": "audio/ogg", "ptt": true}'
+```
+
+**Media via file upload** (`type` is guessed from the file's mimetype):
+
+```bash
+curl -X POST http://localhost:3000/api/send \
+  -H "x-api-key: $KEY" \
+  -F to=254712345678 -F caption=Invoice -F file=@invoice.pdf
+```
+
+Extra JSON options: `fileName` (documents), `mimetype`, `ptt` (send audio as a voice note).
 
 ## How it works
 

@@ -239,6 +239,83 @@ export async function sendText(to: string, text: string): Promise<{ to: string; 
   return { to: jid, id: result?.key.id ?? undefined };
 }
 
+export type MediaType = "image" | "video" | "audio" | "document" | "sticker";
+
+export type MediaSendOptions = {
+  to: string;
+  type: MediaType;
+  /** Public URL Baileys should fetch the media from. */
+  url?: string;
+  /** Base64-encoded media content. */
+  base64?: string;
+  /** Raw upload (multipart) or already-decoded bytes. */
+  buffer?: Buffer;
+  fileName?: string;
+  mimetype?: string;
+  caption?: string;
+  /** Send audio as a push-to-talk voice note. */
+  ptt?: boolean;
+};
+
+export async function sendMedia(opts: MediaSendOptions): Promise<{ to: string; id?: string }> {
+  const rt = runtime();
+  const sock = rt.sock;
+  if (rt.status !== "connected" || !sock) {
+    throw new GatewayError("WhatsApp is not connected. Link a device first.");
+  }
+  const jid = toJid(opts.to);
+
+  if (!opts.url && !opts.base64 && !opts.buffer) {
+    throw new GatewayError("Provide the media via 'url', 'base64', or a 'file' upload.");
+  }
+
+  // WhatsApp Web rejects empty files.
+  if (opts.buffer && opts.buffer.length === 0) {
+    throw new GatewayError("The uploaded file is empty.");
+  }
+
+  // Baileys accepts either a URL object or a raw Buffer for media content.
+  const source: { url: string } | Buffer = opts.buffer
+    ? opts.buffer
+    : ({ url: opts.url! } as const);
+
+  const caption = opts.caption?.trim() || undefined;
+
+  let message: Record<string, unknown>;
+  switch (opts.type) {
+    case "sticker":
+      message = { sticker: source };
+      break;
+    case "audio":
+      message = {
+        audio: source,
+        ptt: opts.ptt === true,
+        mimetype: opts.mimetype || "audio/mpeg",
+      };
+      break;
+    case "document":
+      message = {
+        document: source,
+        fileName: opts.fileName || "file",
+        mimetype: opts.mimetype || "application/octet-stream",
+        caption,
+      };
+      break;
+    case "video":
+      message = { video: source, caption, mimetype: opts.mimetype || undefined };
+      break;
+    case "image":
+    default:
+      message = { image: source, caption, mimetype: opts.mimetype || undefined };
+  }
+
+  const result = await sock.sendMessage(
+    jid,
+    message as unknown as Parameters<WASocket["sendMessage"]>[1],
+  );
+  return { to: jid, id: result?.key.id ?? undefined };
+}
+
 /** Accepts "254712345678" or any full JID such as "123-456@g.us". */
 export function toJid(to: string): string {
   const value = to.trim();
