@@ -89,10 +89,16 @@ export default function Home() {
 
   useEffect(() => {
     setGwKey(localStorage.getItem("gateway_key") ?? "");
+  }, []);
+
+  // Poll only while unlocked — a locked gateway stays quiet instead of
+  // hammering the API with 401s.
+  useEffect(() => {
+    if (needsKey) return;
     refresh();
     const timer = setInterval(refresh, 2500);
     return () => clearInterval(timer);
-  }, [refresh]);
+  }, [refresh, needsKey]);
 
   function saveKey(e: React.FormEvent) {
     e.preventDefault();
@@ -184,19 +190,20 @@ export default function Home() {
             Powered by Baileys · send &amp; receive via HTTP
           </p>
         </div>
-        <span
-          className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${meta.badge}`}
-        >
-          <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
-          {meta.label}
-        </span>
+        {needsKey ? (
+          <span className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-red-50 px-3 py-1 text-xs font-medium text-red-600 dark:border-red-900 dark:bg-red-950/60 dark:text-red-400">
+            <span className="h-2 w-2 rounded-full bg-red-500" />
+            🔒 Locked — API key needed
+          </span>
+        ) : (
+          <span
+            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium ${meta.badge}`}
+          >
+            <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
+            {meta.label}
+          </span>
+        )}
       </header>
-
-      {state?.error && (
-        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-          {state.error}
-        </p>
-      )}
 
       {needsKey && (
         <section className={`${CARD} mb-4 p-5`}>
@@ -224,6 +231,12 @@ export default function Home() {
             </button>
           </form>
         </section>
+      )}
+
+      {state?.error && (
+        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+          {state.error}
+        </p>
       )}
 
       {!state && (
