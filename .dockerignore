@@ -1,0 +1,8 @@
+node_modules
+.next
+.git
+.wa-session
+.env*
+*.md
+.DS_Store
+npm-debug.log*

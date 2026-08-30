@@ -1,36 +1,61 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# WhatsApp Gateway
 
-## Getting Started
+A WhatsApp gateway built with [Next.js](https://nextjs.org) and [Baileys](https://github.com/whiskeysockets/Baileys) — link your WhatsApp account, then send and receive messages over plain HTTP.
 
-First, run the development server:
+## What it does
+
+- **Link a device** two ways: scan a QR code, or request a phone-number pairing code — both from the built-in dashboard.
+- **Send messages** via `POST /api/send` to any phone number or group JID.
+- **Receive messages** — incoming texts are captured live and shown in the dashboard inbox (and readable via `GET /api/state`).
+- **Session persistence** — credentials are stored in `.wa-session/`, so the gateway stays linked across restarts until you log out.
+- **Auto-reconnect** — dropped connections retry automatically; a revoked session wipes itself and shows a fresh QR.
+
+## Getting started
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+npm run dev        # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+1. Open the dashboard and link your phone (QR scan, or enter your number to get a pairing code).
+2. Send/receive from the dashboard, or call the HTTP API:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+# Send a text message (phone number with country code, or a group JID)
+curl -X POST http://localhost:3000/api/send \
+  -H "Content-Type: application/json" \
+  -d '{"to": "254712345678", "message": "Hello from the gateway!"}'
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+# Groups work too — use the group JID
+curl -X POST http://localhost:3000/api/send \
+  -H "Content-Type: application/json" \
+  -d '{"to": "123456789-987654321@g.us", "message": "Hello group!"}'
 
-## Learn More
+# Current status + last 25 received messages
+curl http://localhost:3000/api/state
+```
 
-To learn more about Next.js, take a look at the following resources:
+## HTTP API
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Method | Route          | Body                        | Returns                                              |
+| ------ | -------------- | --------------------------- | ---------------------------------------------------- |
+| GET    | `/api/state`   | —                           | Connection status, QR, pairing code, user, inbox     |
+| POST   | `/api/send`    | `{ to, message }`           | `{ ok, to, id }`                                     |
+| POST   | `/api/pair`    | `{ phone }` (country code)  | `{ ok, code }` — enter the code in WhatsApp          |
+| POST   | `/api/logout`  | —                           | Unlinks the session and clears stored credentials    |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## How it works
 
-## Deploy on Vercel
+Baileys needs a **long-lived WebSocket**, which means a long-running Node process — this works with `next dev` / `next start` / Docker / a VPS, but **not** on serverless platforms like Vercel.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- `src/lib/whatsapp.ts` — the connection manager. A single Baileys socket lives on `globalThis` (so Next.js dev-mode module reloads don't kill it), handles QR/pairing events, reconnects on close, buffers the last 100 inbound messages, and exposes `sendText` / `requestPairingCode` / `logout`.
+- `src/app/api/*/route.ts` — thin HTTP wrappers around the manager.
+- `src/app/page.tsx` — the dashboard; polls `/api/state` every 2.5 s and renders the QR, pairing code, send form, and inbox.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`markOnlineOnConnect: false` keeps the gateway "offline" so your phone continues to receive notifications normally.
+
+## Caveats
+
+- Baileys is an **unofficial** library that reverse-engineers WhatsApp Web. It can break when WhatsApp changes its protocol, and automated accounts can get banned — use it for personal/authorized integrations, not spam.
+- `.wa-session/` holds your linked-device credentials. It's git-ignored; treat it like a password.
+- The inbox is in-memory only (last 100 messages) — it resets on restart. Persist to a database if you need durability.
